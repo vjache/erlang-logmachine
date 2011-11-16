@@ -1,0 +1,1 @@
+werl -args_file "vm.args" -name lm@some.host.name -config dev.config -eval "application:start(logmachine)"

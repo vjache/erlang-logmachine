@@ -1,0 +1,6 @@
+-boot start_sasl
+
+-pa ebin
+
+## Cookie for distributed erlang
+-setcookie "QWE123"
