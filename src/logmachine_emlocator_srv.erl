@@ -73,6 +73,9 @@ handle_cast(Msg, State) ->
 handle_info({nodeup, Node, _InfoList}, #state{instance=InstanceName,em_name=EventManagerName}=State) ->
     install_event_handlers(Node,EventManagerName, InstanceName),
     {noreply, State};
+handle_info({'EXIT', _Pid, _Reason}, State) ->
+	% Process down report
+    {noreply, State};
 handle_info({nodedown, _Node, _InfoList}, State) ->
     % Node down report
     {noreply, State}.
