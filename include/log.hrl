@@ -5,8 +5,4 @@
 -define(LOG_ERROR(Report), error_logger:error_report([Report, {application, ?SELF_APP}, {module, ?MODULE}, {line, ?LINE}])).
 
 %% Echo macro for debugging purposes. Just a convenient helper to print something
--ifdef(debug).
 -define(ECHO(Message), io:format("(~p|~p|~p): ~p~n", [self(),?MODULE, ?LINE, Message])).
--else.
--define(ECHO(Message), ok).
--endif.
