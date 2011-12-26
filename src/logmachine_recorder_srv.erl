@@ -107,14 +107,11 @@ init({archiver,InstanceName}) ->
 open_disk_log(InstanceName) ->
     LogFile=get_log_file(InstanceName),
     case disk_log:open([{name,InstanceName}, {file, LogFile}]) of
-        {ok,_} -> 
-            ok;
+        {ok,_} -> ok;
         {repaired,_,
          {recovered, _},
-         {badbytes, _}} ->
-            ok;
-        {error, Reason} ->
-            throw(Reason)
+         {badbytes, _}} -> ok;
+        {error, Reason} -> throw(Reason)
     end.
 
 handle_call(_Request, _From, State) ->
@@ -125,8 +122,8 @@ handle_cast(Msg, State) ->
     handle_info(Msg, State).
 
 % Recorder clauses
-handle_info(?ALARM_REOPEN, #state_recorder{instance_name=Name,reopen_period=ReoPeriod,last_timestamp=Timestamp}=State) ->
-    do_reopen(Name,Timestamp),
+handle_info(?ALARM_REOPEN, #state_recorder{instance_name=Name,reopen_period=ReoPeriod}=State) ->
+    do_reopen(Name,now()),
     send_after(ReoPeriod, ?ALARM_REOPEN),
     {noreply, State};
 handle_info({Timestamp,_Data}=Event, #state_recorder{instance_name=Name}=State) ->
