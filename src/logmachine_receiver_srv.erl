@@ -27,7 +27,7 @@
 
 %% --------------------------------------------------------------------
 %% External exports
--export([start_link/1, get_global_alias/1]).
+-export([start_link/1, get_global_alias/1, subscribe/3]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -35,7 +35,12 @@
 -import(logmachine_util,[make_name/1]).
 
 
--record(state, {global_alias,cacher,recorder}).
+-record(state, {global_alias,
+				registry = [] :: [{Pid :: pid(), 
+							  SendMethod :: gen_server_cast | 
+								  gen_event_notify | 
+								  info | 
+								  fun((Msg :: term())-> ok ) }]}).
 
 %% ====================================================================
 %% External functions
@@ -46,6 +51,15 @@ start_link(InstanceName) ->
     gen_server:start_link(
       {local, SrvName},
       ?MODULE, [InstanceName], []).
+
+subscribe(InstanceName, SubscriberPid, SendMethod) 
+  when is_pid(SubscriberPid) ->
+	Alias=get_global_alias(InstanceName),
+	case gen_server:call({global, Alias}, 
+						 {subscribe, SubscriberPid, SendMethod}) of
+        {error, Reason} -> throw(Reason);
+        R -> R
+    end.
 
 get_global_alias(InstanceName) ->
     SrvName=make_name([InstanceName, receiver, srv]),
@@ -71,24 +85,37 @@ allocate_global_name(BaseName, N, MaxAttempts) ->
 %% ====================================================================
 
 init([InstanceName]) ->
-    CacheSrvName=logmachine_util:make_name([InstanceName, cache, srv]),
-    RecorderSrvName=logmachine_util:make_name([InstanceName, recorder, srv]),
-    {ok, #state{global_alias=allocate_global_name(InstanceName, 10),
-                cacher=CacheSrvName,
-                recorder=RecorderSrvName}}.
+    {ok, #state{global_alias=allocate_global_name(InstanceName, 10)}}.
 
+handle_call({subscribe, SubscriberPid, SendMethod}, 
+			_From, 
+			#state{registry=Reg}=State) ->
+	case lists:keymember(SubscriberPid, 1, Reg) of
+		false -> {reply, ok, State#state{registry=[{SubscriberPid,SendMethod}|Reg]}};
+		true -> {reply, {error, already_subscribed}, State}
+	end;
 handle_call(get_global_alias, _From, #state{global_alias=GlbalAlias}=State) ->
     {reply, GlbalAlias, State};
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
 
-handle_cast(Info, #state{cacher=Cacher,recorder=Recorder}=State) ->
+handle_cast(Info, #state{registry=Reg}=State) ->
     Timestamp=now(),
     Event={Timestamp, Info},
-    gen_server:cast(Cacher, Event),
-    gen_server:cast(Recorder, Event),
+	notify_subs(Reg, Event),
     {noreply, State}.
+
+notify_subs(Reg, Event) ->
+	[case SendMethod of
+		 gen_server_cast ->
+			 gen_server:cast(Pid, Event);
+		 gen_event_notify ->
+			 gen_event:notify(Pid, Event);
+		 info -> Pid ! Event;
+		 Fun when is_function(Fun, 1) ->
+			 Fun(Event)
+	 end || {Pid, SendMethod} <- Reg].
 
 handle_info({global_name_conflict, _Name}, 
             #state{global_alias={InstanceName,_}}=State) ->

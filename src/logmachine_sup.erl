@@ -91,7 +91,7 @@ init({instance, InstanceName}) ->
     Locator={logmachine_emlocator_srv,
              {logmachine_emlocator_srv,start_link,[InstanceName]},
              permanent, 10000, worker, [logmachine_emlocator_srv]},
-    {ok,{{one_for_one,0,1}, ComponentsSups ++ [Receiver,Locator]}};
+    {ok,{{one_for_one,0,1}, [Receiver | ComponentsSups] ++ [Locator]}};
 % Recorder supervisor
 init({component, recorder, InstanceName}) ->
     Mod=logmachine_recorder_srv,
