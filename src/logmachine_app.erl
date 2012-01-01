@@ -75,10 +75,10 @@ start(_Type, _StartArgs) ->
 stop(_State) ->
     ok.
 
-get_env(Env) ->
-    get_env(Env, fun()-> throw({noconf, Env}) end).
-get_env(Env, Default) ->
-    case application:get_env(logmachine, Env) of
+get_env(EnvVar) ->
+    get_env(EnvVar, fun()-> throw({noconf, EnvVar}) end).
+get_env(EnvVar, Default) ->
+    case application:get_env(logmachine, EnvVar) of
         undefined ->
             if is_function(Default,0) -> Default();
                true -> Default
@@ -87,17 +87,20 @@ get_env(Env, Default) ->
             Val
     end.
 
-get_instance_env(InstanceName, Env) ->
+%% @doc
+%%	Returns an environment variable specific for specified instance.
+%% @end
+get_instance_env(InstanceName, EnvVar) ->
     InstanceProps=get_instance_props(InstanceName),
-    case proplists:get_value(Env,InstanceProps) of
-        undefined -> get_env(Env);
+    case proplists:get_value(EnvVar,InstanceProps) of
+        undefined -> get_env(EnvVar);
         Value -> Value
     end.
 
-get_instance_env(InstanceName, Env, Default) ->
+get_instance_env(InstanceName, EnvVar, Default) ->
     InstanceProps=get_instance_props(InstanceName),
-    case proplists:get_value(Env,InstanceProps) of
-        undefined -> get_env(Env, Default);
+    case proplists:get_value(EnvVar,InstanceProps) of
+        undefined -> get_env(EnvVar, Default);
         Value -> Value
     end.
 
