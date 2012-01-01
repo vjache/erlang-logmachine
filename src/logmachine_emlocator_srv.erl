@@ -57,11 +57,15 @@ start_link(InstanceName) ->
 %%          {stop, Reason}
 %% --------------------------------------------------------------------
 init({locator, InstanceName}) ->
-    EventManagerName=logmachine_app:get_instance_env(InstanceName, locate_em, InstanceName),
-    erlang:process_flag(trap_exit, true),
-    install_event_handlers(node(),EventManagerName, InstanceName),
-    ok=net_kernel:monitor_nodes(true, [{node_type, visible}, nodedown_reason]),
-    {ok, #state{instance=InstanceName,em_name=EventManagerName}}.
+	try EventManagerName=logmachine_app:get_instance_env(InstanceName, locate_em),
+		erlang:process_flag(trap_exit, true),
+		install_event_handlers(node(),EventManagerName, InstanceName),
+		ok=net_kernel:monitor_nodes(true, [{node_type, visible}, nodedown_reason]),
+		{ok, #state{instance=InstanceName,em_name=EventManagerName}}
+	catch 
+		_:{noconf, _EnvVar} ->
+			ignore
+	end.
 
 handle_call(_Request, _From, State) ->
     Reply = ok,
