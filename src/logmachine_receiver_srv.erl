@@ -56,16 +56,19 @@ start_link(InstanceName) ->
       ?MODULE, [InstanceName], []).
 
 -spec subscribe(InstanceName :: atom(), 
-				SubscriberPid :: pid(), 
+				SubscriberRef :: 
+					pid() | 
+					port() | 
+					atom() | % LocalRegName
+					{LocalRegName :: atom(), Node :: node()}|
+					{global, GlobalRegName :: term()}, 
 				SendMethod :: send_method() ) -> ok.
-subscribe(InstanceName, SubscriberPid, SendMethod) 
-  when is_pid(SubscriberPid) ->
-	Alias=get_global_alias(InstanceName),
-	case gen_server:call({global, Alias}, 
-						 {subscribe, SubscriberPid, SendMethod}) of
-        {error, Reason} -> throw(Reason);
-        R -> R
-    end.
+subscribe(InstanceName, SubscriberRef, SendMethod) ->
+	SrvName=make_name([InstanceName, receiver, srv]),
+	case gen_server:call(SrvName, {subscribe, SubscriberRef, SendMethod}) of
+		{error, Reason} -> throw(Reason);
+		R -> R
+	end.
 
 get_global_alias(InstanceName) ->
     SrvName=make_name([InstanceName, receiver, srv]),
@@ -91,15 +94,23 @@ allocate_global_name(BaseName, N, MaxAttempts) ->
 %% ====================================================================
 
 init([InstanceName]) ->
+	erlang:process_flag(trap_exit, true),
     {ok, #state{global_alias=allocate_global_name(InstanceName, 10)}}.
 
-handle_call({subscribe, SubscriberPid, SendMethod}, 
+handle_call({subscribe, SubscriberRef, SendMethod}, 
 			_From, 
 			#state{registry=Reg}=State) ->
-	case lists:keymember(SubscriberPid, 1, Reg) of
+	case lists:keymember(SubscriberRef, 1, Reg) of
 		false -> 
-			SendMethodR=resolve_send_method(SendMethod),
-			{reply, ok, State#state{registry=[{SubscriberPid,SendMethodR}|Reg]}};
+			try
+				SendMethodR=resolve_send_method(SendMethod),
+				MonRef=monitor(SubscriberRef),
+				{reply, ok, 
+				 State#state{registry=[{SubscriberRef, SendMethodR, MonRef} | Reg]}}
+			catch
+				_:ErrReason ->
+					{reply, {error, ErrReason}, State}
+			end;
 		true -> {reply, {error, already_subscribed}, State}
 	end;
 handle_call(get_global_alias, _From, #state{global_alias=GlbalAlias}=State) ->
@@ -111,23 +122,12 @@ handle_call(_Request, _From, State) ->
 handle_cast(Info, #state{registry=Reg}=State) ->
     Timestamp=now(),
     Event={Timestamp, Info},
-	notify_subs(Reg, Event),
-    {noreply, State}.
+    {noreply, State#state{registry=notify_subs(Reg, Event)}}.
 
-notify_subs(Reg, Event) ->
-	[SendMethod(Pid, Event) || {Pid, SendMethod} <- Reg].
-
-resolve_send_method(send) ->
-	fun erlang:send/2;
-resolve_send_method({gen_server, cast}) ->
-	fun gen_server:cast/2;
-resolve_send_method({gen_event, notify}) ->
-	fun gen_event:notify/2;
-resolve_send_method({Module, Function}) ->
-	fun(Pid, Event) ->
-			apply(Module, Function, [Pid, Event])
-	end.
-
+handle_info({'DOWN', MonitorRef, process, _Object, _Info}, 
+			#state{registry=Reg}=State) ->
+	Reg1=lists:keydelete(MonitorRef, 3, Reg),
+    {noreply, State#state{registry=Reg1}};
 handle_info({global_name_conflict, _Name}, 
             #state{global_alias={InstanceName,_}}=State) ->
     {noreply, 
@@ -145,3 +145,44 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %% --------------------------------------------------------------------
 
+monitor(Pid) when is_pid(Pid) ->
+	link(Pid),
+	erlang:monitor(process, Pid);
+monitor(RegName) when is_atom(RegName) ->
+	Pid=whereis(RegName),
+	Pid=/=undefined orelse throw(badarg),
+	link(Pid),
+	erlang:monitor(process, Pid);
+monitor({RegName, Node}) when is_atom(RegName), is_atom(Node) ->
+	case rpc:call(Node, erlang, whereis, [RegName]) of
+		Pid when is_pid(Pid) ->
+			link(Pid),
+			erlang:monitor(process, Pid);
+		Err -> throw(Err)
+	end;
+monitor({global, RegName}) ->
+	Pid=global:whereis_name(RegName),
+	Pid=/=undefined orelse throw(badarg),
+	link(Pid),
+	erlang:monitor(process, Pid).
+
+notify_subs(Reg, Event) ->
+	lists:foldl(
+	  fun({Pid, SendMethod, MonRef}, Reg1) ->
+			  try SendMethod(Pid, Event),Reg1
+			  catch 
+				  _:undef ->
+					  lists:keydelete(MonRef, 3, Reg1)
+			  end
+	  end, Reg, Reg).
+
+resolve_send_method(send) ->
+	fun erlang:send/2;
+resolve_send_method({gen_server, cast}) ->
+	fun gen_server:cast/2;
+resolve_send_method({gen_event, notify}) ->
+	fun gen_event:notify/2;
+resolve_send_method({Module, Function}) ->
+	fun(Pid, Event) ->
+			apply(Module, Function, [Pid, Event])
+	end.
