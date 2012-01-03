@@ -78,7 +78,7 @@ get_evict_after(InstanceName) ->
 %% --------------------------------------------------------------------
 init({cache,InstanceName}) ->
 	ok=logmachine_receiver_srv:subscribe(
-	  InstanceName, self(), gen_server_cast),
+	  InstanceName, self(), {gen_server,cast}),
     % 1. Open ETS ordered table
     InstanceEts=ets:new(make_name(InstanceName), [ordered_set, named_table, public, {keypos, 1}]),
     {ok, #state_cache{ets=InstanceEts}};

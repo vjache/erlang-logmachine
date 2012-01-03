@@ -34,13 +34,16 @@
 
 -import(logmachine_util,[make_name/1]).
 
+-type send_method() :: 
+		  {Module :: atom(), Function :: atom()} | 
+		  {gen_server, cast} |
+		  {gen_event, notify} |
+		  send |
+		  fun((Msg :: term())-> ok ).
 
 -record(state, {global_alias,
-				registry = [] :: [{Pid :: pid(), 
-							  SendMethod :: gen_server_cast | 
-								  gen_event_notify | 
-								  info | 
-								  fun((Msg :: term())-> ok ) }]}).
+				registry = [] :: [{Pid :: pid(),
+								   SendMethod :: send_method() }]}).
 
 %% ====================================================================
 %% External functions
@@ -52,6 +55,9 @@ start_link(InstanceName) ->
       {local, SrvName},
       ?MODULE, [InstanceName], []).
 
+-spec subscribe(InstanceName :: atom(), 
+				SubscriberPid :: pid(), 
+				SendMethod :: send_method() ) -> ok.
 subscribe(InstanceName, SubscriberPid, SendMethod) 
   when is_pid(SubscriberPid) ->
 	Alias=get_global_alias(InstanceName),
@@ -91,7 +97,9 @@ handle_call({subscribe, SubscriberPid, SendMethod},
 			_From, 
 			#state{registry=Reg}=State) ->
 	case lists:keymember(SubscriberPid, 1, Reg) of
-		false -> {reply, ok, State#state{registry=[{SubscriberPid,SendMethod}|Reg]}};
+		false -> 
+			SendMethodR=resolve_send_method(SendMethod),
+			{reply, ok, State#state{registry=[{SubscriberPid,SendMethodR}|Reg]}};
 		true -> {reply, {error, already_subscribed}, State}
 	end;
 handle_call(get_global_alias, _From, #state{global_alias=GlbalAlias}=State) ->
@@ -107,15 +115,18 @@ handle_cast(Info, #state{registry=Reg}=State) ->
     {noreply, State}.
 
 notify_subs(Reg, Event) ->
-	[case SendMethod of
-		 gen_server_cast ->
-			 gen_server:cast(Pid, Event);
-		 gen_event_notify ->
-			 gen_event:notify(Pid, Event);
-		 info -> Pid ! Event;
-		 Fun when is_function(Fun, 1) ->
-			 Fun(Event)
-	 end || {Pid, SendMethod} <- Reg].
+	[SendMethod(Pid, Event) || {Pid, SendMethod} <- Reg].
+
+resolve_send_method(send) ->
+	fun erlang:send/2;
+resolve_send_method({gen_server, cast}) ->
+	fun gen_server:cast/2;
+resolve_send_method({gen_event, notify}) ->
+	fun gen_event:notify/2;
+resolve_send_method({Module, Function}) ->
+	fun(Pid, Event) ->
+			apply(Module, Function, [Pid, Event])
+	end.
 
 handle_info({global_name_conflict, _Name}, 
             #state{global_alias={InstanceName,_}}=State) ->

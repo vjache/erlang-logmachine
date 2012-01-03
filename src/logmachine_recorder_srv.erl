@@ -92,7 +92,7 @@ get_archive_after(InstanceName) ->
 % Init recorder
 init({recorder,InstanceName}) ->
 	ok=logmachine_receiver_srv:subscribe(
-	  InstanceName, self(), gen_server_cast),
+	  InstanceName, self(), {gen_server,cast}),
     ensure_dir(get_data_dir(InstanceName)),
     open_disk_log(InstanceName),
     ReoPeriod=get_reopen_period(InstanceName),
