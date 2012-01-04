@@ -59,16 +59,16 @@ start_link_archiver(InstanceName) ->
     gen_server:start_link({local, SrvName}, ?MODULE, {archiver, InstanceName}, []).
 
 -spec scan_history(InstanceName :: atom(), 
-                   FromDatetime :: timestamp(), 
-                   ToDatetime :: timestamp(), 
+                   FromTimestamp :: timestamp(), 
+                   ToTimestamp :: timestamp(), 
                    Filter :: fun( (history_entry())-> boolean() )) -> zlists:zlist(history_entry()) .
-scan_history(InstanceName, FromDatetime, ToDatetime, Filter) ->
-    History=get_history(InstanceName, FromDatetime),
-    if  ToDatetime == now orelse 
-        ToDatetime == undefined ->
+scan_history(InstanceName, FromTimestamp, ToTimestamp, Filter) ->
+    History=get_history(InstanceName, FromTimestamp),
+    if  ToTimestamp == now orelse 
+        ToTimestamp == undefined ->
            Result=History;
        true ->
-           Result=zlists:takewhile(fun({T,_Q}) ->  T < ToDatetime end, History)
+           Result=zlists:takewhile(fun({T,_Q}) ->  T < ToTimestamp end, History)
     end,
     zlists:filter(Filter , Result).
 %% ====================================================================
@@ -254,15 +254,14 @@ get_log_files(InstanceName, From) ->
     end.
 
 get_log_files(InstanceName, LogDir, FromFilenameExcl) ->
-	LogFileName=get_log_file(InstanceName),
     case filelib:wildcard(
 		   get_wildcard(InstanceName), LogDir) of
-        [] -> [LogFileName];
+        [] -> [InstanceName];
         Files ->
             case lists:dropwhile(
                      fun(E)-> E =< FromFilenameExcl end, 
                      lists:sort(Files)) of
-                [] -> [LogFileName];
+                [] -> [InstanceName];
                 [F|_] -> [F | fun()-> get_log_files(InstanceName, LogDir, F) end]
             end
     end.
