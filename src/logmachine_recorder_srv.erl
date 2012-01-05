@@ -26,20 +26,19 @@
 %% --------------------------------------------------------------------
 
 -include("log.hrl").
+-include("types.hrl").
 
 -import(logmachine_util,[make_name/1,send_after/2,to_millis/1,now_to_millis/1,millis_to_now/1,ensure_dir/1]).
 
 -define(ALARM_REOPEN, {alarm, reopen}).
 -define(ALARM_ARCHIVE, {alarm, archive}).
 
--type timestamp() :: {MegaSeconds :: non_neg_integer(), 
-					  Seconds :: non_neg_integer(), 
-					  MicroSeconds :: non_neg_integer() } .
--type history_entry() :: {Timestamp :: timestamp(), Event :: any()} .
-
 %% --------------------------------------------------------------------
 %% External exports
--export([start_link_archiver/1,start_link_recorder/1, scan_history/4]).
+-export([start_link_archiver/1,
+         start_link_recorder/1, 
+         get_history/3, 
+         get_history/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -58,19 +57,46 @@ start_link_archiver(InstanceName) ->
     SrvName=get_archiver_srv_name(InstanceName),
     gen_server:start_link({local, SrvName}, ?MODULE, {archiver, InstanceName}, []).
 
--spec scan_history(InstanceName :: atom(), 
+-spec get_history(InstanceName :: atom(), 
                    FromTimestamp :: timestamp(), 
-                   ToTimestamp :: timestamp(), 
-                   Filter :: fun( (history_entry())-> boolean() )) -> zlists:zlist(history_entry()) .
-scan_history(InstanceName, FromTimestamp, ToTimestamp, Filter) ->
+                   ToTimestamp :: timestamp()) -> zlists:zlist(history_entry()) .
+get_history(InstanceName, FromTimestamp, ToTimestamp) ->
     History=get_history(InstanceName, FromTimestamp),
     if  ToTimestamp == now orelse 
         ToTimestamp == undefined ->
-           Result=History;
+           History;
        true ->
-           Result=zlists:takewhile(fun({T,_Q}) ->  T < ToTimestamp end, History)
-    end,
-    zlists:filter(Filter , Result).
+           zlists:takewhile(fun({T,_Q}) ->  T < ToTimestamp end, History)
+    end.
+
+-spec get_history(
+        InstanceName :: atom(), 
+        From :: timestamp()) -> zlists:zlist(history_entry()) .
+get_history(InstanceName, From) ->
+    LogDir=get_data_dir(InstanceName),
+    LogFilesToScan=get_log_files(InstanceName, From),
+    ?ECHO({"LOGS_TO_SCAN",zlists:expand(LogFilesToScan)}),
+    zlists:dropwhile(
+      fun({T,_})-> T<From end,
+      zlists:generate(
+        LogFilesToScan, 
+        fun(Filename)-> 
+                {AccLogs, _}=disk_log:accessible_logs(),
+                case lists:member(Filename, AccLogs) of
+                    true ->
+                        ok;
+                    false ->
+                        case disk_log:open([{name, Filename},
+                                            {linkto,whereis(get_archiver_srv_name(InstanceName))},
+                                            {mode,read_only},
+                                            {file, filename:join(LogDir, Filename)}]) of
+                            {ok,_} ->  ok;
+                            {repaired, _, _, _} -> ok;
+                            {error, Reason} -> throw(Reason)
+                        end
+                end,
+                zlists_disk_log:read(Filename)
+        end)).
 %% ====================================================================
 %% Server functions
 %% ====================================================================
@@ -265,32 +291,3 @@ get_log_files(InstanceName, LogDir, FromFilenameExcl) ->
                 [F|_] -> [F | fun()-> get_log_files(InstanceName, LogDir, F) end]
             end
     end.
-
--spec get_history(
-        InstanceName :: atom(), 
-        From :: timestamp()) -> zlists:zlist(history_entry()) .
-get_history(InstanceName, From) ->
-    LogDir=get_data_dir(InstanceName),
-    LogFilesToScan=get_log_files(InstanceName, From),
-    ?ECHO({"LOGS_TO_SCAN",zlists:expand(LogFilesToScan)}),
-    zlists:dropwhile(
-      fun({T,_})-> T<From end,
-      zlists:generate(
-        LogFilesToScan, 
-        fun(Filename)-> 
-                {AccLogs, _}=disk_log:accessible_logs(),
-                case lists:member(Filename, AccLogs) of
-                    true ->
-                        ok;
-                    false ->
-                        case disk_log:open([{name, Filename},
-                                            {linkto,whereis(get_archiver_srv_name(InstanceName))},
-                                            {mode,read_only},
-                                            {file, filename:join(LogDir, Filename)}]) of
-                            {ok,_} ->  ok;
-                            {repaired, _, _, _} -> ok;
-                            {error, Reason} -> throw(Reason)
-                        end
-                end,
-                zlists_disk_log:read(Filename)
-        end)).
