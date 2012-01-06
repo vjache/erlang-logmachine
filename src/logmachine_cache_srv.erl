@@ -25,17 +25,30 @@
 %% --------------------------------------------------------------------
 %% Include files
 %% --------------------------------------------------------------------
-
--import(logmachine_util,[make_name/1,send_after/2,to_millis/1,now_to_millis/1,millis_to_now/1]).
+-include_lib("stdlib/include/ms_transform.hrl").
+-import(logmachine_util,[make_name/1,
+                         send_after/2,
+                         to_millis/1,
+                         now_to_millis/1,
+                         millis_to_now/1]).
 
 -define(ALARM_EVICT, {alarm,evict}).
 
 %% --------------------------------------------------------------------
 %% External exports
--export([start_link_cache/1, start_link_evictor/1]).
+-export([start_link_cache/1, 
+         start_link_evictor/1, 
+         get_history/2, 
+         get_interval/1, 
+         get_cache_ets_name/1]).
 
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+-export([init/1, 
+         handle_call/3, 
+         handle_cast/2, 
+         handle_info/2, 
+         terminate/2, 
+         code_change/3]).
 
 -record(state_cache, {ets :: ets:tab()}).
 -record(state_evictor, {ets :: ets:tab(),evict_period,evict_after}).
@@ -64,6 +77,24 @@ get_evict_after(InstanceName) ->
       evict_after,
       {4, hour}).
 
+get_interval(InstanceName) ->
+    T=get_cache_ets_name(InstanceName),
+    case ets:first(T) of
+        '$end_of_table' -> undefined;
+        From -> 
+            To=ets:last(T),
+            {From, To}
+    end.
+
+get_history(InstanceName, FromTimestamp) ->
+    Ms=ets:fun2ms(fun({T,_}=Entry) when T >= FromTimestamp ->
+                          Entry
+                  end),
+    T=get_cache_ets_name(InstanceName),
+    zlists_ets:select(T, Ms, 100).
+
+get_cache_ets_name(InstanceName) ->
+    make_name(InstanceName).
 %% ====================================================================
 %% Server functions
 %% ====================================================================
@@ -80,7 +111,8 @@ init({cache,InstanceName}) ->
 	ok=logmachine_receiver_srv:subscribe(
 	  InstanceName, self(), {gen_server,cast}),
     % 1. Open ETS ordered table
-    InstanceEts=ets:new(make_name(InstanceName), [ordered_set, named_table, public, {keypos, 1}]),
+    InstanceEts=ets:new(get_cache_ets_name(InstanceName), 
+                        [ordered_set, named_table, public, {keypos, 1}]),
     {ok, #state_cache{ets=InstanceEts}};
 init({evictor,InstanceName}) ->
     EvictPeriod=get_evict_period(InstanceName),
