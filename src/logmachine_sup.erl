@@ -28,7 +28,10 @@
 %% --------------------------------------------------------------------
 %% External exports
 %% --------------------------------------------------------------------
--export([start_link_main/0, start_link_instance/1,start_link_component/2]).
+-export([start_link_main/0, 
+         start_link_instance/1,
+         start_link_component/2,
+         start_link_sub_sup/0]).
 
 %% --------------------------------------------------------------------
 %% Internal exports
@@ -61,6 +64,10 @@ start_link_component(ComponentName, InstanceName) ->
     SupName=logmachine_util:make_name([InstanceName,ComponentName,sup]),
     supervisor:start_link({local, SupName}, ?MODULE, {component, ComponentName, InstanceName}).
 
+start_link_sub_sup() ->
+    RegName='logmachine.sub.sup',
+    supervisor:start_link({local, RegName}, ?MODULE, sub_sup).
+
 %% ====================================================================
 %% Server functions
 %% ====================================================================
@@ -77,7 +84,10 @@ init(root) ->
         [{InstanceName,
           {?MODULE,start_link_instance,[InstanceName]},
           permanent, infinity, supervisor,[?MODULE]} || InstanceName <- proplists:get_keys(Instances)],
-    {ok,{{one_for_one,0,1}, InstancesSups}};
+    SubMan={sub_sup,
+            {?MODULE,start_link_sub_sup,[]},
+            permanent, infinity, supervisor,[?MODULE]},
+    {ok,{{one_for_one,0,1}, InstancesSups ++ [SubMan]}};
 % Instance supervisor
 init({instance, InstanceName}) ->
     Components=[recorder, cache], % logmachine_receiver_srv
@@ -111,7 +121,12 @@ init({component, cache, InstanceName}) ->
     Evictor={'logmachine_cache/evictor',
               {Mod,start_link_evictor,[InstanceName]},
               permanent, 10000, worker, [Mod]},
-    {ok,{{one_for_one,0,1}, [Cache, Evictor]}}.
+    {ok,{{one_for_one,0,1}, [Cache, Evictor]}};
+% Subscription supervisor
+init(sub_sup) ->
+    SubWorker = {logmachine_sub_srv, {logmachine_sub_srv, start_link, []},
+                 temporary, 10000, worker, [logmachine_sub_srv]},
+    {ok,{{simple_one_for_one,0,1}, [SubWorker]}}.
 
 %% ====================================================================
 %% Internal functions
