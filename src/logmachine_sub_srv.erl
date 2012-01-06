@@ -37,7 +37,7 @@
          terminate/2, 
          code_change/3]).
 
--record(state, {instance,zlist,subscriber,last_from,mode :: recover | normal}).
+-record(state, {instance,zlist,subscriber,subscriber_mref,last_from,mode :: recover | normal}).
 
 %% ====================================================================
 %% External functions
@@ -53,13 +53,15 @@ start_link(InstanceName, FromTimestamp, SubPid) ->
 
 init({InstanceName, FromTimestamp, SubPid}) ->
     link(SubPid),
+    MRef=monitor(process, SubPid),
     ZList=logmachine:get_zlist(InstanceName, FromTimestamp),
     {ok, #state{instance=InstanceName,
                 zlist=ZList,
                 subscriber=SubPid,
+                subscriber_mref=MRef,
                 last_from=FromTimestamp,mode=recover}, 1}.
 
-handle_call(_Request, _From, State) ->
+handle_call(_Request, _From, #state{}=State) ->
     {reply, unsupported, State}.
 
 handle_cast({Ts, _ }=HistoryEntry, 
@@ -68,9 +70,10 @@ handle_cast({Ts, _ }=HistoryEntry,
                    mode=normal}=State) when Ts > LastFrom ->
     LastFrom1=send_entries(SubPid, [HistoryEntry], LastFrom),
     {noreply, State#state{last_from=LastFrom1}};
-handle_cast(_Msg, State) ->
+handle_cast(_Msg, #state{}=State) ->
     {noreply, State}.
 
+% History pump done, hence enter normal mode (retranslation)
 handle_info(timeout, 
             #state{instance=InstanceName,
                    zlist=[],
@@ -88,6 +91,7 @@ handle_info(timeout,
     LastFrom1=send_entries(SubPid, ZList, LastFrom),
     % Switch mode to normal
     {noreply, State#state{last_from=LastFrom1,mode=normal}};
+% Do pump another one chunk to the subscriber (recovery)
 handle_info(timeout, 
             #state{zlist=ZList,
                    subscriber=SubPid,
@@ -99,7 +103,11 @@ handle_info(timeout,
     LastFrom1=send_entries(SubPid, L, LastFrom),
     % Update state with tail zlist and new timestamp
     {noreply, State#state{zlist=ZList1,last_from=LastFrom1}, 1};
-handle_info(_Info, State) ->
+% Subscriber process terminated normaly, hence subscription session stops also (normaly)
+handle_info({'DOWN', MRef, process, _Object, _Info}, 
+            #state{subscriber_mref=MRef}=State) ->
+    {stop, normal, State};
+handle_info(_Info, #state{}=State) ->
     {noreply, State}.
 
 terminate(_Reason, _State) -> ok.
@@ -113,5 +121,5 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 send_entries(SubPid, [{T,_}=E], _LastFrom) ->
     SubPid ! E, T;
 send_entries(SubPid, EntryList, LastFrom) ->
-    zlists:foldl(fun({T,_}=E) -> SubPid ! E, T end, LastFrom, EntryList).
+    zlists:foldl(fun({T,_}=E, _) -> SubPid ! E, T end, LastFrom, EntryList).
 
