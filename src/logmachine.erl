@@ -32,6 +32,7 @@
 -export([get_zlist/2,
          subscribe/2,
          subscribe/3,
+         subscribe/4,
          info/1]).
 
 -export([start_err_sim/0]).
@@ -62,7 +63,10 @@ subscribe(InstanceName, FromTimestamp) ->
                 FromTimestamp :: timestamp(),
                 SubscriberPid :: pid()) -> SubscriptionSession :: pid().
 subscribe(InstanceName, FromTimestamp, SubPid) ->
-    logmachine_sup:start_sub_child(InstanceName, FromTimestamp, SubPid).
+    subscribe(InstanceName, FromTimestamp, SubPid, InstanceName).
+
+subscribe(InstanceName, FromTimestamp, SubPid, Marker) ->
+    logmachine_sup:start_sub_child(InstanceName, FromTimestamp, SubPid, Marker).
 
 %%-------------------------------------------------------------------------------
 %% @doc

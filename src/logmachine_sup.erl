@@ -32,7 +32,7 @@
          start_link_instance/1,
          start_link_component/2,
          start_link_sub_sup/0,
-         start_sub_child/3]).
+         start_sub_child/4]).
 
 %% --------------------------------------------------------------------
 %% Internal exports
@@ -69,15 +69,16 @@ start_link_sub_sup() ->
     RegName='logmachine.sub.sup',
     supervisor:start_link({local, RegName}, ?MODULE, sub_sup).
 
-start_sub_child(InstanceName, FromTimestamp, SubPid) ->
-    case supervisor:start_child('logmachine.sub.sup', [InstanceName, FromTimestamp, SubPid]) of
+start_sub_child(InstanceName, FromTimestamp, SubPid, Marker) ->
+    case supervisor:start_child('logmachine.sub.sup', [InstanceName, FromTimestamp, SubPid, Marker]) of
         {ok, Child} -> Child;
         {ok, Child, _} -> Child;
         Unexpected -> throw({failed_to_start_subscription, 
                              [{reason,Unexpected},
                               {instance,InstanceName},
                               {start_from,FromTimestamp},
-                              {subscriber, SubPid}]})
+                              {subscriber, SubPid},
+                              {marker, Marker}]})
     end.
 
 %% ====================================================================

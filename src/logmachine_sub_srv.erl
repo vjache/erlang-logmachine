@@ -27,7 +27,7 @@
 
 %% --------------------------------------------------------------------
 %% External exports
--export([start_link/3]).
+-export([start_link/4]).
 
 %% gen_server callbacks
 -export([init/1, 
@@ -37,21 +37,21 @@
          terminate/2, 
          code_change/3]).
 
--record(state, {instance,zlist,subscriber,subscriber_mref,last_from,mode :: recover | normal}).
+-record(state, {instance,zlist,subscriber,subscriber_mref,last_from,mode :: recover | normal, marker}).
 
 %% ====================================================================
 %% External functions
 %% ====================================================================
 
-start_link(InstanceName, FromTimestamp, SubPid) ->
-    gen_server:start_link(?MODULE, {InstanceName, FromTimestamp, SubPid}, []).
+start_link(InstanceName, FromTimestamp, SubPid, Marker) ->
+    gen_server:start_link(?MODULE, {InstanceName, FromTimestamp, SubPid, Marker}, []).
     
 
 %% ====================================================================
 %% Server functions
 %% ====================================================================
 
-init({InstanceName, FromTimestamp, SubPid}) ->
+init({InstanceName, FromTimestamp, SubPid, Marker}) ->
     link(SubPid),
     MRef=monitor(process, SubPid),
     ZList=logmachine:get_zlist(InstanceName, FromTimestamp),
@@ -59,7 +59,9 @@ init({InstanceName, FromTimestamp, SubPid}) ->
                 zlist=ZList,
                 subscriber=SubPid,
                 subscriber_mref=MRef,
-                last_from=FromTimestamp,mode=recover}, 1}.
+                last_from=FromTimestamp,
+                mode=recover,
+                marker=Marker}, 1}.
 
 handle_call(_Request, _From, #state{}=State) ->
     {reply, unsupported, State}.
@@ -67,8 +69,9 @@ handle_call(_Request, _From, #state{}=State) ->
 handle_cast({Ts, _ }=HistoryEntry, 
             #state{subscriber=SubPid,
                    last_from=LastFrom,
-                   mode=normal}=State) when Ts > LastFrom ->
-    LastFrom1=send_entries(SubPid, [HistoryEntry], LastFrom),
+                   mode=normal,
+                   marker=Marker}=State) when Ts > LastFrom ->
+    LastFrom1=send_entries(SubPid, [HistoryEntry], LastFrom, Marker),
     {noreply, State#state{last_from=LastFrom1}};
 handle_cast(_Msg, #state{}=State) ->
     {noreply, State}.
@@ -79,7 +82,8 @@ handle_info(timeout,
                    zlist=[],
                    subscriber=SubPid,
                    last_from={MgS,S,McS},
-                   mode=recover}=State) ->
+                   mode=recover,
+                   marker=Marker}=State) ->
     % Subscribe for receiver events
     logmachine_receiver_srv:subscribe(InstanceName, self(), {gen_server,cast}),
     % Await buffered messages arrive to RAM cache 
@@ -88,7 +92,7 @@ handle_info(timeout,
     LastFrom={MgS,S,McS+1},
     ZList=logmachine:get_zlist(InstanceName, LastFrom),
     % Send if any
-    LastFrom1=send_entries(SubPid, ZList, LastFrom),
+    LastFrom1=send_entries(SubPid, ZList, LastFrom, Marker),
     % Switch mode to normal
     {noreply, State#state{last_from=LastFrom1,mode=normal}};
 % Do pump another one chunk to the subscriber (recovery)
@@ -96,11 +100,12 @@ handle_info(timeout,
             #state{zlist=ZList,
                    subscriber=SubPid,
                    last_from=LastFrom,
-                   mode=recover}=State) ->
+                   mode=recover,
+                   marker=Marker}=State) ->
     % Take a chunk of 100 entries
     {L, ZList1}=zlists:scroll(100, ZList),
     % Send it to subscriber
-    LastFrom1=send_entries(SubPid, L, LastFrom),
+    LastFrom1=send_entries(SubPid, L, LastFrom, Marker),
     % Update state with tail zlist and new timestamp
     {noreply, State#state{zlist=ZList1,last_from=LastFrom1}, 1};
 % Subscriber process terminated normaly, hence subscription session stops also (normaly)
@@ -118,8 +123,8 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 %%% Internal functions
 %% --------------------------------------------------------------------
 
-send_entries(SubPid, [{T,_}=E], _LastFrom) ->
-    SubPid ! E, T;
-send_entries(SubPid, EntryList, LastFrom) ->
-    zlists:foldl(fun({T,_}=E, _) -> SubPid ! E, T end, LastFrom, EntryList).
+send_entries(SubPid, [{T,_}=E], _LastFrom, Marker) ->
+    SubPid ! {Marker, E}, T;
+send_entries(SubPid, EntryList, LastFrom, Marker) ->
+    zlists:foldl(fun({T,_}=E, _) -> SubPid ! {Marker, E}, T end, LastFrom, EntryList).
 
