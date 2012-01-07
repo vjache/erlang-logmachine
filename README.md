@@ -45,9 +45,11 @@ Each logmachine instance have its own receiver process which is globally registe
 ``{InstanceName :: atom(), N :: non_neg_integer()}`` where N starts from 0. For example mentioned 
 above it will be a {error_logger, 0}. This process is an entry point to logmachine instance, so if 
 we want to notify logmachine about some event directly lets do: 
-    ``ReceiverGlobalAlias = {error_logger, 0},``
-    ``Event = 'some_error_event',``
-    ``gen_server:cast({global, ReceiverGlobalAlias}, Event).``
+    ``` erlang
+    ReceiverGlobalAlias = {error_logger, 0},
+    Event = some_error_event,
+    gen_server:cast({global, ReceiverGlobalAlias}, Event).
+    ```
 
 ### Recorder ###
 
