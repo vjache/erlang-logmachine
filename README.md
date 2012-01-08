@@ -44,7 +44,8 @@ Main components of a system are:
 Each logmachine instance have its own receiver process which is globally registered with alias like 
 ``{InstanceName :: atom(), N :: non_neg_integer()}`` where N starts from 0. For example mentioned 
 above it will be a {error_logger, 0}. This process is an entry point to logmachine instance, so if 
-we want to notify logmachine about some event directly lets do: 
+we want to notify logmachine about some event directly lets do:
+
 ```erlang
 ReceiverGlobalAlias = {error_logger, 0},
 Event = some_error_event,
