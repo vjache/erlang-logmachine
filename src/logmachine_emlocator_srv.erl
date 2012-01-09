@@ -68,8 +68,7 @@ init({locator, InstanceName}) ->
 	end.
 
 handle_call(_Request, _From, State) ->
-    Reply = ok,
-    {reply, Reply, State}.
+    {reply, unsupported, State}.
 
 handle_cast(Msg, State) ->
     handle_info(Msg, State).
@@ -86,6 +85,12 @@ handle_info({'EXIT', Pid, _Reason}, #state{}=State) ->
     {noreply, State};
 handle_info({nodedown, _Node, _InfoList}, State) ->
     % Node down report
+    {noreply, State};
+handle_info({nodedown, _Node}, State) ->
+    % Node down report
+    {noreply, State};
+handle_info(_Msg, State) ->
+    % Ignore message
     {noreply, State}.
 
 terminate(_Reason, _State) ->
