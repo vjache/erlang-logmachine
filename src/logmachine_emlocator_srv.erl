@@ -111,7 +111,8 @@ install_event_handlers(Node, EventManagerName, InstanceName) ->
              {HandlerModule, node()},  % Handler
              logmachine_receiver_srv:get_global_alias(InstanceName)) % Args
     catch _: noproc -> 
-              logmachine_util:send_after({5, sec}, {retry, Node})
+              logmachine_util:send_after({5, sec}, {retry, Node});
+          _: {nodedown, _Node} -> ok 
     end.
 
 upload_module(Node, _Mod) when Node==node() ->
