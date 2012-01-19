@@ -36,7 +36,7 @@
 ensure_dir(Dir) ->
     case filelib:ensure_dir(filename:join(Dir, "fake")) of
         ok -> Dir;
-        {error, Reason} -> throw(Reason)
+        {error, Reason} -> throw({Reason, Dir})
     end.
 
 make_name(NameComponent) when is_atom(NameComponent) ->
