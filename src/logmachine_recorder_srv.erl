@@ -43,7 +43,7 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--record(state_recorder, {instance_name, reopen_period, last_timestamp}).
+-record(state_recorder, {instance_name, reopen_period, last_timestamp, buff=[], buff_size=0, buff_max_size=1000}).
 -record(state_archiver, {instance_name, archive_period, archive_after}).
 
 %% ====================================================================
@@ -171,15 +171,29 @@ handle_call(_Request, _From, State) ->
     {reply, {error, unsupported}, State}.
 
 % Record event
+handle_cast(Event, #state_recorder{buff_size=BuffMaxSize,
+								   buff_max_size=BuffMaxSize}=State) ->
+	handle_cast(Event,flush(State));
 handle_cast({Timestamp,_Data}=Event, 
-			#state_recorder{instance_name=Name}=State) ->
-    ok=disk_log:log(Name, Event),
-    {noreply, State#state_recorder{last_timestamp=Timestamp} };
+			#state_recorder{buff=Buff,buff_size=BuffSize}=State) ->
+    {noreply, 
+	 State#state_recorder{last_timestamp=Timestamp, 
+						  buff=[Event|Buff],
+						  buff_size=BuffSize+1}, 1000};
 % Skip message
 handle_cast(_Msg, State) ->
 	{noreply, State}.
 
+flush(#state_recorder{instance_name=Name,
+					  buff=Buff,
+					  buff_size=BuffMaxSize,
+					  buff_max_size=BuffMaxSize}=State) ->
+	ok=disk_log:alog_terms(Name, lists:reverse(Buff)),
+	State#state_recorder{buff=[], buff_size=0}.
+
 % Recorder clauses
+handle_info(timeout, #state_recorder{}=State) ->
+    {noreply, flush(State)};
 handle_info(?ALARM_REOPEN, #state_recorder{instance_name=Name,reopen_period=ReoPeriod}=State) ->
     do_reopen(Name,now()),
     send_after(ReoPeriod, ?ALARM_REOPEN),
