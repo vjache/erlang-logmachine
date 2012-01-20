@@ -184,10 +184,10 @@ handle_cast({Timestamp,_Data}=Event,
 handle_cast(_Msg, State) ->
 	{noreply, State}.
 
+flush(#state_recorder{buff=[]}=State) ->
+	State;
 flush(#state_recorder{instance_name=Name,
-					  buff=Buff,
-					  buff_size=BuffMaxSize,
-					  buff_max_size=BuffMaxSize}=State) ->
+					  buff=Buff}=State) ->
 	ok=disk_log:alog_terms(Name, lists:reverse(Buff)),
 	State#state_recorder{buff=[], buff_size=0}.
 
