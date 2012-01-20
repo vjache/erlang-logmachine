@@ -52,7 +52,7 @@
 
 start_link_recorder(InstanceName) ->
     SrvName=get_recorder_srv_name(InstanceName),
-    gen_server:start_link({local, SrvName}, ?MODULE, {recorder,InstanceName}, []).
+    gen_server:start_link({local, SrvName}, ?MODULE, {recorder,InstanceName}, [{fullsweep_after, 10}]).
 start_link_archiver(InstanceName) ->
     SrvName=get_archiver_srv_name(InstanceName),
     gen_server:start_link({local, SrvName}, ?MODULE, {archiver, InstanceName}, []).
