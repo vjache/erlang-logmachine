@@ -33,6 +33,7 @@
          subscribe/2,
          subscribe/3,
          subscribe/4,
+		 subscribe/5,
          info/1]).
 
 -export([start_err_sim/0]).
@@ -66,7 +67,15 @@ subscribe(InstanceName, FromTimestamp, SubPid) ->
     subscribe(InstanceName, FromTimestamp, SubPid, InstanceName).
 
 subscribe(InstanceName, FromTimestamp, SubPid, Marker) ->
-    logmachine_sup:start_sub_child(InstanceName, FromTimestamp, SubPid, Marker).
+    subscribe(InstanceName, FromTimestamp, SubPid, Marker, [{'$1',[],['$1']}]).
+
+-spec subscribe(InstanceName :: atom(), 
+                FromTimestamp :: timestamp(),
+                SubscriberPid :: pid(),
+                Marker :: term(), 
+                MatchSpec :: ets:match_spec()) -> SubscriptionSession :: pid().
+subscribe(InstanceName, FromTimestamp, SubPid, Marker, MatchSpec) -> 
+    logmachine_sup:start_sub_child(InstanceName, FromTimestamp, SubPid, Marker, MatchSpec).
 
 %%-------------------------------------------------------------------------------
 %% @doc

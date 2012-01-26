@@ -27,7 +27,7 @@
 
 %% --------------------------------------------------------------------
 %% External exports
--export([start_link/4]).
+-export([start_link/5]).
 
 %% gen_server callbacks
 -export([init/1, 
@@ -37,21 +37,30 @@
          terminate/2, 
          code_change/3]).
 
--record(state, {instance,zlist,subscriber,subscriber_mref,last_from,mode :: recover | normal, marker}).
+-record(state, 
+        {instance,
+         zlist,
+         subscriber,
+         subscriber_mref,
+         last_from,
+         mode :: recover | normal, 
+         marker, 
+         match_spec, 
+         match_specC}).
 
 %% ====================================================================
 %% External functions
 %% ====================================================================
 
-start_link(InstanceName, FromTimestamp, SubPid, Marker) ->
-    gen_server:start_link(?MODULE, {InstanceName, FromTimestamp, SubPid, Marker}, []).
+start_link(InstanceName, FromTimestamp, SubPid, Marker, MatchSpec) ->
+    gen_server:start_link(?MODULE, {InstanceName, FromTimestamp, SubPid, Marker, MatchSpec}, []).
     
 
 %% ====================================================================
 %% Server functions
 %% ====================================================================
 
-init({InstanceName, FromTimestamp, SubPid, Marker}) ->
+init({InstanceName, FromTimestamp, SubPid, Marker, MatchSpec}) ->
     link(SubPid),
     MRef=monitor(process, SubPid),
     ZList=logmachine:get_zlist(InstanceName, FromTimestamp),
@@ -61,7 +70,9 @@ init({InstanceName, FromTimestamp, SubPid, Marker}) ->
                 subscriber_mref=MRef,
                 last_from=FromTimestamp,
                 mode=recover,
-                marker=Marker}, 1}.
+                marker=Marker,
+                match_spec=MatchSpec,
+                match_specC=ets:match_spec_compile(MatchSpec)}, 1}.
 
 handle_call(_Request, _From, #state{}=State) ->
     {reply, unsupported, State}.
@@ -70,8 +81,9 @@ handle_cast({Ts, _ }=HistoryEntry,
             #state{subscriber=SubPid,
                    last_from=LastFrom,
                    mode=normal,
-                   marker=Marker}=State) when Ts > LastFrom ->
-    LastFrom1=send_entries(SubPid, [HistoryEntry], LastFrom, Marker),
+                   marker=Marker,
+                   match_specC=MatchSpecC}=State) when Ts > LastFrom ->
+    LastFrom1=send_entries(SubPid, [HistoryEntry], LastFrom, Marker, MatchSpecC),
     {noreply, State#state{last_from=LastFrom1}};
 handle_cast(_Msg, #state{}=State) ->
     {noreply, State}.
@@ -83,7 +95,8 @@ handle_info(timeout,
                    subscriber=SubPid,
                    last_from={MgS,S,McS},
                    mode=recover,
-                   marker=Marker}=State) ->
+                   marker=Marker,
+                   match_specC=MatchSpecC}=State) ->
     % Subscribe for receiver events
     logmachine_receiver_srv:subscribe(InstanceName, self(), {gen_server,cast}),
     % Await buffered messages arrive to RAM cache 
@@ -92,7 +105,7 @@ handle_info(timeout,
     LastFrom={MgS,S,McS+1},
     ZList=logmachine:get_zlist(InstanceName, LastFrom),
     % Send if any
-    LastFrom1=send_entries(SubPid, ZList, LastFrom, Marker),
+    LastFrom1=send_entries(SubPid, ZList, LastFrom, Marker, MatchSpecC),
     % Switch mode to normal
     {noreply, State#state{last_from=LastFrom1,mode=normal}};
 % Do pump another one chunk to the subscriber (recovery)
@@ -101,11 +114,12 @@ handle_info(timeout,
                    subscriber=SubPid,
                    last_from=LastFrom,
                    mode=recover,
-                   marker=Marker}=State) ->
+                   marker=Marker,
+                   match_specC=MatchSpecC}=State) ->
     % Take a chunk of 100 entries
     {L, ZList1}=zlists:scroll(100, ZList),
     % Send it to subscriber
-    LastFrom1=send_entries(SubPid, L, LastFrom, Marker),
+    LastFrom1=send_entries(SubPid, L, LastFrom, Marker, MatchSpecC),
     % Update state with tail zlist and new timestamp
     {noreply, State#state{zlist=ZList1,last_from=LastFrom1}, 1};
 % Subscriber process terminated normaly, hence subscription session stops also (normaly)
@@ -123,8 +137,17 @@ code_change(_OldVsn, State, _Extra) -> {ok, State}.
 %%% Internal functions
 %% --------------------------------------------------------------------
 
-send_entries(SubPid, [{T,_}=E], _LastFrom, Marker) ->
-    SubPid ! {Marker, E}, T;
-send_entries(SubPid, EntryList, LastFrom, Marker) ->
-    zlists:foldl(fun({T,_}=E, _) -> SubPid ! {Marker, E}, T end, LastFrom, EntryList).
+send_entries(SubPid, [{T,Evt}], _LastFrom, Marker, MatchSpecC) ->
+    case ets:match_spec_run([Evt], MatchSpecC) of
+        [] -> _LastFrom;
+        [Evt1] -> SubPid ! {Marker, {T,Evt1}}, T
+    end;
+send_entries(SubPid, EntryList, LastFrom, Marker, MatchSpecC) ->
+    zlists:foldl(
+      fun({T,Evt}, _T) -> 
+              case ets:match_spec_run([Evt], MatchSpecC) of
+                  [] -> _T;
+                  [Evt1] -> SubPid ! {Marker, {T,Evt1}}, T
+              end
+      end, LastFrom, EntryList).
 
