@@ -57,14 +57,13 @@ start_link(InstanceName) ->
 %%          {stop, Reason}
 %% --------------------------------------------------------------------
 init({locator, InstanceName}) ->
-	try EventManagerName=logmachine_app:get_instance_env(InstanceName, locate_em),
+	try EventManagerRef=logmachine_app:get_instance_env(InstanceName, locate_em),
 		erlang:process_flag(trap_exit, true),
-		install_event_handlers(node(),EventManagerName, InstanceName),
+        self() ! {retry, node()},
 		ok=net_kernel:monitor_nodes(true, [{node_type, visible}, nodedown_reason]),
-		{ok, #state{instance=InstanceName,em_name=EventManagerName}}
+		{ok, #state{instance=InstanceName,em_name=EventManagerRef}}
 	catch 
-		_:{noconf, _EnvVar} ->
-			ignore
+		_:{noconf, _EnvVar} -> ignore
 	end.
 
 handle_call(_Request, _From, State) ->
@@ -73,11 +72,31 @@ handle_call(_Request, _From, State) ->
 handle_cast(Msg, State) ->
     handle_info(Msg, State).
 
-handle_info({retry, Node}, #state{instance=InstanceName,em_name=EventManagerName}=State) ->
+handle_info({retry, Node}, 
+            #state{instance=InstanceName, em_name= {local, EventManagerName}}=State) when Node == node() ->
+    install_event_handlers(Node, EventManagerName, InstanceName),
+    {noreply, State};
+handle_info({retry, Node}, 
+            #state{instance=InstanceName, em_name= {global, EventManagerName}}=State) ->
     install_event_handlers(Node,EventManagerName, InstanceName),
     {noreply, State};
-handle_info({nodeup, Node, _InfoList}, #state{instance=InstanceName,em_name=EventManagerName}=State) ->
-    install_event_handlers(Node,EventManagerName, InstanceName),
+handle_info({retry, Node}, 
+            #state{instance=InstanceName, em_name= {global, EventManagerName, Constraints}}=State) ->
+    Allowed=
+        case Constraints of
+            {inc, NodeList} ->
+                lists:member(Node, NodeList);
+            {exc, NodeList} ->
+                not lists:member(Node, NodeList);
+            exc_local ->
+                Node =/= node()
+        end,
+    if Allowed  -> install_event_handlers(Node,EventManagerName, InstanceName);
+       true     -> ok
+    end,
+    {noreply, State};
+handle_info({nodeup, Node, _InfoList}, #state{}=State) ->
+    self() ! {retry, Node},
     {noreply, State};
 handle_info({'EXIT', Pid, _Reason}, #state{}=State) ->
     Node=node(Pid),

@@ -19,7 +19,12 @@
           {evict_after, period()} |
           {reopen_period, period()} |
           {archive_after, period()} |
-          {locate_em, atom()}.
+          {locate_em, {local,  EventManagerName :: atom()} |
+                      {global, EventManagerName :: atom()} |
+                      {global, EventManagerName :: atom(), 
+                                {inc, NodeList :: [atom()]}|
+                                {exc, NodeList :: [atom()]}|
+                                exc_local} }.
 
 %
 % This type specification describes a config structure
