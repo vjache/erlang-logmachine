@@ -79,10 +79,11 @@ get_history(InstanceName, FromTimestamp, ToTimestamp) ->
         From :: timestamp()) -> zlists:zlist(history_entry()) .
 get_history(InstanceName, From) ->
     LogDir=get_data_dir(InstanceName),
-    LogFilesToScan=get_log_files(InstanceName, From),
-    ?ECHO({"LOGS_TO_SCAN",zlists:expand(LogFilesToScan)}),
+    FromLT=to_long_timestamp(From),
+    LogFilesToScan=get_log_files(InstanceName, FromLT),
+%%     ?ECHO({"LOGS_TO_SCAN",zlists:expand(LogFilesToScan)}),
     zlists:dropwhile(
-      fun({T,_})-> T<From end,
+      fun({T,_})-> to_long_timestamp(T) < FromLT end,
       zlists:generate(
         LogFilesToScan, 
         fun(Filename)-> 
@@ -101,6 +102,18 @@ get_history(InstanceName, From) ->
                 end,
                 zlists_disk_log:read(Filename)
         end)).
+
+to_long_timestamp(Millis) when is_integer(Millis) ->
+    erlang:append_element(
+      calendar:now_to_universal_time(
+        millis_to_now(Millis)), 
+      Millis rem 1000);
+to_long_timestamp({{_,_,_},{_,_,_},_}=LongTimestamp) ->
+    LongTimestamp;
+to_long_timestamp({_,_,McS}=Now) ->
+    erlang:append_element(
+      calendar:now_to_universal_time(Now), 
+      McS div 1000).
 
 get_logs_owner(InstanceName) ->
     case whereis(get_archiver_srv_name(InstanceName)) of
@@ -130,7 +143,7 @@ get_arch_data_dir(InstanceName) ->
       fun() -> filename:join(get_data_dir(InstanceName), "archive") end).
 
 get_log_file(InstanceName) ->
-    filename:join(get_data_dir(InstanceName), InstanceName)++".log".
+    filename:join(get_data_dir(InstanceName), InstanceName).
 
 get_reopen_period(InstanceName) ->
     logmachine_app:get_instance_env(
@@ -152,8 +165,8 @@ get_archive_after(InstanceName) ->
 
 % Init recorder
 init({recorder,InstanceName}) ->
-	ok=logmachine_receiver_srv:subscribe(
-	  InstanceName, self(), {gen_server,cast}),
+    ok=logmachine_receiver_srv:subscribe(
+      InstanceName, self(), {gen_server,cast}),
     ensure_dir(get_data_dir(InstanceName)),
     open_disk_log(InstanceName),
     ReoPeriod=get_reopen_period(InstanceName),
@@ -182,24 +195,24 @@ handle_call(_Request, _From, State) ->
 
 % Record event
 handle_cast(Event, #state_recorder{buff_size=BuffMaxSize,
-								   buff_max_size=BuffMaxSize}=State) ->
-	handle_cast(Event,flush(State));
+                                   buff_max_size=BuffMaxSize}=State) ->
+    handle_cast(Event,flush(State));
 handle_cast({Timestamp,_Data}=Event, 
-			#state_recorder{buff=Buff,buff_size=BuffSize}=State) ->
+            #state_recorder{buff=Buff,buff_size=BuffSize}=State) ->
     {noreply, 
-	 State#state_recorder{last_timestamp=Timestamp, 
-						  buff=[Event|Buff],
-						  buff_size=BuffSize+1}, 1000};
+     State#state_recorder{last_timestamp=Timestamp, 
+                          buff=[Event|Buff],
+                          buff_size=BuffSize+1}, 1000};
 % Skip message
 handle_cast(_Msg, State) ->
-	{noreply, State}.
+    {noreply, State}.
 
 flush(#state_recorder{buff=[]}=State) ->
-	State;
+    State;
 flush(#state_recorder{instance_name=Name,
-					  buff=Buff}=State) ->
-	ok=disk_log:alog_terms(Name, lists:reverse(Buff)),
-	State#state_recorder{buff=[], buff_size=0}.
+                      buff=Buff}=State) ->
+    ok=disk_log:alog_terms(Name, lists:reverse(Buff)),
+    State#state_recorder{buff=[], buff_size=0}.
 
 % Recorder clauses
 handle_info(timeout, #state_recorder{}=State) ->
@@ -240,8 +253,7 @@ do_archive(InstanceName, ArchAfter) ->
 do_move(InstanceName,InfimumMillis) ->
     ArchDir=get_arch_data_dir(InstanceName),
     LogDir=get_data_dir(InstanceName),
-    DateTime=calendar:now_to_universal_time(millis_to_now(InfimumMillis)),
-    PseudoFilename=reopened_filename(InstanceName,DateTime,InfimumMillis rem 1000),
+    PseudoFilename=reopened_filename(InstanceName,to_long_timestamp(InfimumMillis)),
     case filelib:wildcard(get_wildcard(InstanceName), LogDir) of
         [] -> ok;
         Files ->
@@ -273,16 +285,15 @@ do_zip(InstanceName) ->
 
 do_reopen(InstanceName, undefined) ->
     do_reopen(InstanceName, now()); %TODO: read log for last timestamp instead of now()
-do_reopen(InstanceName, {_,_,Micros}=Timestamp) ->
-    DateTime=calendar:now_to_universal_time(Timestamp),
+do_reopen(InstanceName, {_,_,_}=Timestamp) ->
     Filename=filename:join(
                get_data_dir(InstanceName),
-               reopened_filename(InstanceName, DateTime, Micros div 1000)),
+               reopened_filename(InstanceName, to_long_timestamp(Timestamp))),
     ok=disk_log:reopen(InstanceName, Filename).
 
 get_wildcard(InstanceName) ->
     lists:flatten(io_lib:format("~p_????-??-??_*", [InstanceName])).
-reopened_filename(InstanceName, {{Y,Mon,D},{H,Min,S}}, Millis) ->
+reopened_filename(InstanceName, {{Y,Mon,D},{H,Min,S}, Millis}) ->
     lists:flatten(io_lib:format(
                     "~s_~.4.0w-~.2.0w-~.2.0w_~.2.0w-~.2.0w-~.2.0w.~.3.0wZ",
                     [InstanceName, Y, Mon, D, H, Min, S, Millis])).
@@ -292,20 +303,20 @@ reopened_filename(InstanceName, {{Y,Mon,D},{H,Min,S}}, Millis) ->
         From :: timestamp()) -> zlists:zlist(file:filename()) .
 get_log_files(InstanceName, From) ->
     LogDir=get_data_dir(InstanceName),
-    Now=now(),
-    if From >= Now ->
+    FromLT=to_long_timestamp(From),
+    Now=to_long_timestamp(now()),
+    if FromLT >= Now ->
            [];
        true ->
-           FromDateTime=calendar:now_to_universal_time(From),
            get_log_files(
              InstanceName,
              LogDir,
-             reopened_filename(InstanceName, FromDateTime, 0))
+             reopened_filename(InstanceName, FromLT))
     end.
 
 get_log_files(InstanceName, LogDir, FromFilenameExcl) ->
     case filelib:wildcard(
-		   get_wildcard(InstanceName), LogDir) of
+           get_wildcard(InstanceName), LogDir) of
         [] -> [InstanceName];
         Files ->
             case lists:dropwhile(
