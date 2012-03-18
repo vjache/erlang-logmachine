@@ -41,7 +41,12 @@
          get_history/2]).
 
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+-export([init/1, 
+         handle_call/3, 
+         handle_cast/2, 
+         handle_info/2, 
+         terminate/2, 
+         code_change/3]).
 
 -record(state_recorder, {instance_name, reopen_period, last_timestamp, buff=[], buff_size=0, buff_max_size=1000}).
 -record(state_archiver, {instance_name, archive_period, archive_after}).
@@ -83,13 +88,12 @@ get_history(InstanceName, From) ->
         fun(Filename)-> 
                 {AccLogs, _}=disk_log:accessible_logs(),
                 case lists:member(Filename, AccLogs) of
-                    true ->
-                        ok;
-                    false ->
-                        case disk_log:open([{name, Filename},
-                                            {linkto,whereis(get_archiver_srv_name(InstanceName))},
-                                            {mode,read_only},
-                                            {file, filename:join(LogDir, Filename)}]) of
+                    true    -> ok;
+                    false   ->
+                        case disk_log:open([{name,   Filename},
+                                            {linkto, get_logs_owner(InstanceName)},
+                                            {mode,   read_only},
+                                            {file,   filename:join(LogDir, Filename)}]) of
                             {ok,_} ->  ok;
                             {repaired, _, _, _} -> ok;
                             {error, Reason} -> throw(Reason)
@@ -97,6 +101,12 @@ get_history(InstanceName, From) ->
                 end,
                 zlists_disk_log:read(Filename)
         end)).
+
+get_logs_owner(InstanceName) ->
+    case whereis(get_archiver_srv_name(InstanceName)) of
+        undefined -> self();
+        Pid -> Pid
+    end.
 %% ====================================================================
 %% Server functions
 %% ====================================================================
