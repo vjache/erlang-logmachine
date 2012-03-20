@@ -43,11 +43,14 @@
 %% Server functions
 %% ====================================================================
 
-init(ReceiverGlobalAlias) ->
-    {ok, #state{receiver_global_alias=ReceiverGlobalAlias}}.
+-type receiver_ref() :: Name :: atom() | {Name :: atom(),Node :: node()} | {global,GlobalName :: term()} | pid().
 
-handle_event(Event, #state{receiver_global_alias=ReceiverGlobalAlias}=State) ->
-    gen_server:cast({global, ReceiverGlobalAlias}, Event),
+-spec init(ReceiverRef :: receiver_ref()) -> {ok, #state{} }.
+init(ReceiverRef) ->
+    {ok, #state{receiver_global_alias=ReceiverRef}}.
+
+handle_event(Event, #state{receiver_global_alias=ReceiverRef}=State) ->
+    gen_server:cast(ReceiverRef, Event),
     {ok, State}.
 
 handle_call(_Request, State) ->
