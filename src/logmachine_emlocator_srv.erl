@@ -128,7 +128,7 @@ install_event_handlers(Node, EventManagerName, InstanceName) ->
         ok=gen_event:add_sup_handler(
              {EventManagerName, Node}, % EventMgrRef
              {HandlerModule, node()},  % Handler
-             logmachine_receiver_srv:get_global_alias(InstanceName)) % Args
+             {logmachine_receiver_srv:get_localy_registered_name(InstanceName),node()}) % Args
     catch _: noproc -> 
               logmachine_util:send_after({5, sec}, {retry, Node});
           _: {nodedown, _Node} -> ok 

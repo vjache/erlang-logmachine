@@ -27,7 +27,7 @@
 
 %% --------------------------------------------------------------------
 %% External exports
--export([start_link/1, get_global_alias/1, subscribe/3]).
+-export([start_link/1, get_global_alias/1, subscribe/3, get_localy_registered_name/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -49,8 +49,11 @@
 %% External functions
 %% ====================================================================
 
+get_localy_registered_name(InstanceName) ->
+    make_name([InstanceName, receiver, srv]).
+
 start_link(InstanceName) ->
-    SrvName=make_name([InstanceName, receiver, srv]),
+    SrvName=get_localy_registered_name(InstanceName),
     gen_server:start_link(
       {local, SrvName},
       ?MODULE, [InstanceName], []).
@@ -64,14 +67,14 @@ start_link(InstanceName) ->
 					{global, GlobalRegName :: term()}, 
 				SendMethod :: send_method() ) -> ok.
 subscribe(InstanceName, SubscriberRef, SendMethod) ->
-	SrvName=make_name([InstanceName, receiver, srv]),
+	SrvName=get_localy_registered_name(InstanceName),
 	case gen_server:call(SrvName, {subscribe, SubscriberRef, SendMethod}) of
 		{error, Reason} -> throw(Reason);
 		R -> R
 	end.
 
 get_global_alias(InstanceName) ->
-    SrvName=make_name([InstanceName, receiver, srv]),
+    SrvName=get_localy_registered_name(InstanceName),
     case gen_server:call(SrvName, get_global_alias) of
         {error, Reason} -> throw(Reason);
         R -> R
