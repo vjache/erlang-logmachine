@@ -51,6 +51,8 @@
 -record(state_recorder, {instance_name, reopen_period, last_timestamp, buff=[], buff_size=0, buff_max_size=1000}).
 -record(state_archiver, {instance_name, archive_period, archive_after}).
 
+-define(IDLE_MILLIS,100).
+
 %% ====================================================================
 %% External functions
 %% ====================================================================
@@ -202,10 +204,10 @@ handle_cast({Timestamp,_Data}=Event,
     {noreply, 
      State#state_recorder{last_timestamp=Timestamp, 
                           buff=[Event|Buff],
-                          buff_size=BuffSize+1}, 1000};
+                          buff_size=BuffSize+1}, ?IDLE_MILLIS};
 % Skip message
 handle_cast(_Msg, State) ->
-    {noreply, State}.
+    {noreply, State, ?IDLE_MILLIS}.
 
 flush(#state_recorder{buff=[]}=State) ->
     State;
@@ -220,7 +222,7 @@ handle_info(timeout, #state_recorder{}=State) ->
 handle_info(?ALARM_REOPEN, #state_recorder{instance_name=Name,reopen_period=ReoPeriod}=State) ->
     do_reopen(Name,now()),
     send_after(ReoPeriod, ?ALARM_REOPEN),
-    {noreply, State};
+    {noreply, State, ?IDLE_MILLIS};
 % Archiver clauses
 handle_info(?ALARM_ARCHIVE, 
             #state_archiver{instance_name=Name,
@@ -231,8 +233,10 @@ handle_info(?ALARM_ARCHIVE,
     {noreply, State};
 % Universal clauses
 handle_info(_Info, State) ->
-    {noreply, State}.
+    {noreply, State, ?IDLE_MILLIS}.
 
+terminate(_Reason, #state_recorder{}=State) ->
+    flush(State);
 terminate(_Reason, _State) ->
     ok.
 
