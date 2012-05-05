@@ -38,7 +38,9 @@
 -export([start_link_archiver/1,
          start_link_recorder/1, 
          get_history/3, 
-         get_history/2]).
+         get_history/2,
+         get_data_dir/1,
+         get_arch_data_dir/1]).
 
 %% gen_server callbacks
 -export([init/1, 

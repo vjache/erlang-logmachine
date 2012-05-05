@@ -34,7 +34,8 @@
          subscribe/3,
          subscribe/4,
 		 subscribe/5,
-         info/1]).
+         info/1,
+         info/2]).
 
 -export([start_err_sim/0]).
 
@@ -42,8 +43,16 @@
 %% API Functions
 %%===============================================================================
 
-info(_Key) ->
-    ok.
+info(InstanceName) ->
+    [{data_dir, logmachine_recorder_srv:get_data_dir(InstanceName)},
+     {arch_data_dir, logmachine_recorder_srv:get_arch_data_dir(InstanceName)}].
+
+info(InstanceName, data_dir) ->
+    logmachine_recorder_srv:get_data_dir(InstanceName);
+info(InstanceName, arch_data_dir) ->
+     logmachine_recorder_srv:get_arch_data_dir(InstanceName);
+info(_InstanceName, Prop) ->
+    throw({noprop, Prop}).
 
 %%-------------------------------------------------------------------------------
 %% @doc
