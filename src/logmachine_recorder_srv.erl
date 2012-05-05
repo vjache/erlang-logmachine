@@ -277,10 +277,12 @@ do_zip(InstanceName) ->
     ArchDir=get_arch_data_dir(InstanceName),
     [begin
          File=filename:join(ArchDir,FN),
-         ZipAFile=File++".zip",
+         ZipAFile      = File     ++ ".zip",
+         ZipAFileDraft = ZipAFile ++ "#",
          case filelib:is_regular(ZipAFile) of
              false ->
-                 {ok,_}=zip:create(ZipAFile, [FN], [{cwd,ArchDir}]);
+                 {ok,_}=zip:create(ZipAFileDraft, [FN], [{cwd,ArchDir}]),
+                 ok=file:rename(ZipAFileDraft, ZipAFile);
              _ ->
                 ok
          end,
