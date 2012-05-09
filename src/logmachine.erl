@@ -93,10 +93,10 @@ subscribe(InstanceName, FromTimestamp, SubPid, Marker, MatchSpec) ->
 %%-------------------------------------------------------------------------------
 -spec get_zlist(InstanceName :: atom(), 
                 FromTimestamp :: timestamp()) -> zlists:zlist(history_entry()).
-get_zlist(InstanceName, FromTimestamp) ->
+get_zlist(InstanceName, FromTimestamp) when ?IS_TIMESTAMP(FromTimestamp) ->
     case logmachine_cache_srv:get_interval(InstanceName) of
         % If fits into RAM
-        {From, _To} when From =< FromTimestamp ->
+        {From, _To} when From =< FromTimestamp, ?IS_TIMESTAMP(From) ->
             logmachine_cache_srv:get_history(InstanceName, FromTimestamp);
         % Otherwise read from disk log
         _ -> 
@@ -108,7 +108,9 @@ get_zlist(InstanceName, FromTimestamp) ->
                       % Exclude last element
                       zlists:dropwhile(fun(E1) -> E==E1 end, ZList)
               end)
-    end.
+    end;
+get_zlist(InstanceName, {{_,_,_},{_,_,_},_}=FromTimestamp) ->
+    get_zlist(InstanceName, logmachine_util:utc_to_now(FromTimestamp)).
 
 %%-------------------------------------------------------------------------------
 %% @doc

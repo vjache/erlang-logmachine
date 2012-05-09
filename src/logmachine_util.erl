@@ -27,11 +27,19 @@
 %%
 %% Exported Functions
 %%
--export([make_name/1, to_millis/1, now_to_millis/1,millis_to_now/1, send_after/2, ensure_dir/1]).
+-export([make_name/1, 
+         to_millis/1, 
+         now_to_millis/1,
+         millis_to_now/1, 
+         send_after/2, 
+         ensure_dir/1,
+         utc_to_ms1970/1,
+         utc_to_now/1]).
 
 %%
 %% API Functions
 %%
+-define(SEC1970, 62167219200).
 
 ensure_dir(Dir) ->
     case filelib:ensure_dir(filename:join(Dir, "fake")) of
@@ -67,6 +75,12 @@ to_millis({N,hms}) ->
 
 send_after(Period, Message) ->
     {ok,_}=timer:send_after(to_millis(Period), Message).
+
+utc_to_ms1970({{Year,Month,Day}, {Hour,Min,Sec}, Mls}) ->
+    (calendar:datetime_to_gregorian_seconds({{Year,Month,Day},{Hour,Min,Sec}}) - ?SEC1970)*1000 + Mls.
+
+utc_to_now(UTC) ->
+    millis_to_now(utc_to_ms1970(UTC)).
 
 %%
 %% Local Functions

@@ -36,3 +36,5 @@
                          [instance_config_item()]}] % Instance specific properties
                      }
                    ]} .
+
+-define(IS_TIMESTAMP(T), (is_integer(element(1,T)) andalso is_integer(element(2,T)) andalso is_integer(element(3,T)))).

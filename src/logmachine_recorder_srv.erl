@@ -83,11 +83,10 @@ get_history(InstanceName, FromTimestamp, ToTimestamp) ->
         From :: timestamp()) -> zlists:zlist(history_entry()) .
 get_history(InstanceName, From) ->
     LogDir=get_data_dir(InstanceName),
-    FromLT=to_long_timestamp(From),
-    LogFilesToScan=get_log_files(InstanceName, FromLT),
+    LogFilesToScan=get_log_files(InstanceName, From),
 %%     ?ECHO({"LOGS_TO_SCAN",zlists:expand(LogFilesToScan)}),
     zlists:dropwhile(
-      fun({T,_})-> to_long_timestamp(T) < FromLT end,
+      fun({T,_})-> T < From end,
       zlists:generate(
         LogFilesToScan, 
         fun(Filename)-> 
