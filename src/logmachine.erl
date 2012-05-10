@@ -102,11 +102,9 @@ get_zlist(InstanceName, FromTimestamp) when ?IS_TIMESTAMP(FromTimestamp) ->
         _ -> 
             zlists:entail(
               logmachine_recorder_srv:get_history(InstanceName, FromTimestamp),
-              fun({T,_}=E) ->
+              fun({T,_}=_E) ->
                       % Get zlist (probably form RAM cache)
-                      ZList=get_zlist(InstanceName, T),
-                      % Exclude last element
-                      zlists:dropwhile(fun(E1) -> E==E1 end, ZList)
+                      get_zlist(InstanceName, logmachine_util:now_add(T,1))
               end)
     end;
 get_zlist(InstanceName, {{_,_,_},{_,_,_},_}=FromTimestamp) ->

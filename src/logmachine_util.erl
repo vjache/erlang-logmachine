@@ -34,12 +34,15 @@
          send_after/2, 
          ensure_dir/1,
          utc_to_ms1970/1,
-         utc_to_now/1]).
+         utc_to_now/1,
+         now_add/2]).
 
 %%
 %% API Functions
 %%
 -define(SEC1970, 62167219200).
+-define(MLN,1000000).
+-define(MLN2,1000000000000).
 
 ensure_dir(Dir) ->
     case filelib:ensure_dir(filename:join(Dir, "fake")) of
@@ -82,6 +85,12 @@ utc_to_ms1970({{Year,Month,Day}, {Hour,Min,Sec}, Mls}) ->
 utc_to_now(UTC) ->
     millis_to_now(utc_to_ms1970(UTC)).
 
+now_add({Mega, Sec, Micro}, Micros)  ->
+    T=(Mega * ?MLN + Sec) * ?MLN + Micro + Micros,
+    Mega1= T div ?MLN2,
+    Sec1=(T rem ?MLN2) div ?MLN,
+    Micro1=T rem ?MLN,
+    {Mega1, Sec1, Micro1}.
 %%
 %% Local Functions
 %%
