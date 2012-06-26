@@ -190,6 +190,9 @@ open_disk_log(InstanceName) ->
         {repaired,_,
          {recovered, _},
          {badbytes, _}} -> ok;
+		{error, {not_a_log_file, _} } -> 
+			ok=file:delete(LogFile),
+			open_disk_log(InstanceName);
         {error, Reason} -> throw(Reason)
     end.
 
