@@ -34,7 +34,7 @@
 
 -import(logmachine_util,[make_name/1]).
 
--record(state, {em_name,instance}).
+-record(state, {em_name,instance, handler}).
 
 %% ====================================================================
 %% External functions
@@ -58,10 +58,11 @@ start_link(InstanceName) ->
 %% --------------------------------------------------------------------
 init({locator, InstanceName}) ->
 	try EventManagerRef=logmachine_app:get_instance_env(InstanceName, locate_em),
+        Handler = logmachine_app:get_instance_env(InstanceName, handler, logmachine_event_handler),
 		erlang:process_flag(trap_exit, true),
         self() ! {retry, node()},
 		ok=net_kernel:monitor_nodes(true, [{node_type, visible}, nodedown_reason]),
-		{ok, #state{instance=InstanceName,em_name=EventManagerRef}}
+		{ok, #state{instance=InstanceName,em_name=EventManagerRef, handler = Handler}}
 	catch 
 		_:{noconf, _EnvVar} -> ignore
 	end.
@@ -73,15 +74,16 @@ handle_cast(Msg, State) ->
     handle_info(Msg, State).
 
 handle_info({retry, Node}, 
-            #state{instance=InstanceName, em_name= {local, EventManagerName}}=State) when Node == node() ->
-    install_event_handlers(Node, EventManagerName, InstanceName),
+            #state{instance=InstanceName, em_name= {local, EventManagerName}, handler = HandlerModule}=State)
+  when Node == node() ->
+    install_event_handlers(Node, HandlerModule, EventManagerName, InstanceName),
     {noreply, State};
 handle_info({retry, Node}, 
-            #state{instance=InstanceName, em_name= {global, EventManagerName}}=State) ->
-    install_event_handlers(Node,EventManagerName, InstanceName),
+            #state{instance=InstanceName, em_name= {global, EventManagerName}, handler = HandlerModule}=State) ->
+    install_event_handlers(Node, HandlerModule, EventManagerName, InstanceName),
     {noreply, State};
 handle_info({retry, Node}, 
-            #state{instance=InstanceName, em_name= {global, EventManagerName, Constraints}}=State) ->
+            #state{instance=InstanceName, em_name= {global, EventManagerName, Constraints}, handler = HandlerModule}=State) ->
     Allowed=
         case Constraints of
             {inc, NodeList} ->
@@ -91,7 +93,7 @@ handle_info({retry, Node},
             exc_local ->
                 Node =/= node()
         end,
-    if Allowed  -> install_event_handlers(Node,EventManagerName, InstanceName);
+    if Allowed  -> install_event_handlers(Node, HandlerModule, EventManagerName, InstanceName);
        true     -> ok
     end,
     {noreply, State};
@@ -121,9 +123,8 @@ code_change(_OldVsn, State, _Extra) ->
 %% --------------------------------------------------------------------
 %%% Internal functions
 %% --------------------------------------------------------------------
-install_event_handlers(Node, EventManagerName, InstanceName) ->
+install_event_handlers(Node, HandlerModule, EventManagerName, InstanceName) ->
     try gen_event:which_handlers({EventManagerName, Node}),
-        HandlerModule=logmachine_event_handler,
         upload_module(Node, HandlerModule),
         ok=gen_event:add_sup_handler(
              {EventManagerName, Node}, % EventMgrRef
